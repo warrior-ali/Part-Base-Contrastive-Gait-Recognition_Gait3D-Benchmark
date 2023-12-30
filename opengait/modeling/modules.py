@@ -366,3 +366,40 @@ def RmBN2dAffine(model):
         if isinstance(m, nn.BatchNorm2d):
             m.weight.requires_grad = False
             m.bias.requires_grad = False
+
+class PartBaseEncoder(nn.Module):
+    def __init__(self, **kwargs):
+        super(BasicConv2d, self).__init__()
+        # self.conv = nn.Conv2d(in_channels, out_channels, kernel_size,
+        #                       stride=stride, padding=padding, bias=False, **kwargs)
+        
+        self.conv1 = nn.Conv2d(1, 16, 3, stride=1, padding=1, bias=False, **kwargs)
+        self.conv2 = nn.Conv2d(16, 32, 3, 1, 1)
+        self.dropout1 = nn.Dropout2d(0.25)
+        self.dropout2 = nn.Dropout2d(0.5)
+
+        # https://androidkt.com/global-average-pooling-in-pytorch-using-adaptiveavgpool/
+        self.avg_pool = nn.AdaptiveAvgPool2d((1,1))
+
+        self.fc1 = nn.Linear(32, 128)
+        self.fc2 = nn.Linear(128, 64)
+        
+    def forward(self, x):
+      x = self.conv1(x)
+      x = F.relu(x)
+
+      x = self.conv2(x)
+      x = F.relu(x)
+
+      x = F.max_pool2d(x, 2)
+      x = self.dropout1(x)
+
+      x = self.avg_pool(x)
+
+      x = torch.flatten(x, 1)
+      x = self.fc1(x)
+      x = F.relu(x)
+      x = self.dropout2(x)
+      x = self.fc2(x)
+      
+      return x

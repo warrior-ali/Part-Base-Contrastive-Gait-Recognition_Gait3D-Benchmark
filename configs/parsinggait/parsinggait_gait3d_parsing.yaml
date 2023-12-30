@@ -35,6 +35,7 @@ loss_cfg:
 
 model_cfg:
   model: ParsingGait
+  coarse_part_base_triplet: True
   backbone_cfg:
     type: ResNet9
     block: BasicBlock

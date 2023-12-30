@@ -1,7 +1,7 @@
 import torch
 
 from ..base_model import BaseModel
-from ..modules import SetBlockWrapper, HorizontalPoolingPyramid, PackSequenceWrapper, SeparateFCs, SeparateBNNecks
+from ..modules import SetBlockWrapper, HorizontalPoolingPyramid, PackSequenceWrapper, SeparateFCs, SeparateBNNecks,PartBaseEncoder
 
 from torch.nn import functional as F
 import numpy as np
@@ -65,6 +65,10 @@ class ParsingGait(BaseModel):
         self.TP = PackSequenceWrapper(torch.max)
         self.HPP = HorizontalPoolingPyramid(bin_num=model_cfg['bin_num'])
 
+        self.partBaseEncoderList = []
+        for i in range(5):
+            self.partBaseEncoderList[i] = PartBaseEncoder()
+
         nfeat = model_cfg['SeparateFCs']['in_channels']
         gcn_cfg = model_cfg['gcn_cfg']
         self.fine_parts = gcn_cfg['fine_parts']
@@ -73,6 +77,7 @@ class ParsingGait(BaseModel):
         self.only_fine_graph = gcn_cfg['only_fine_graph']
         self.only_coarse_graph = gcn_cfg['only_coarse_graph']
         self.combine_fine_coarse_graph = gcn_cfg['combine_fine_coarse_graph']
+        self.coarse_part_base_triplet = model_cfg['coarse_part_base_triplet']
 
         if self.only_fine_graph:
             fine_adj_npy = get_fine_adj_npy()
@@ -165,11 +170,37 @@ class ParsingGait(BaseModel):
         coarse_z_feat = torch.cat(coarse_z_list, dim=1)  # [n*s, 11, c, h, w] or [n*s, 5, c, h, w]
 
         return coarse_z_feat
+    
+    def ParsPartforCoarsePairs(self, mask_resize):  ## this function is making individual parts to define part base pairs in triplet loss
+        """
+            mask_resize: [n*s, H, W]
+            return [n*s, 5, h, w]
+            ***Coarse Parts:
+            1: [1, 2, 11]  Head, Torso, Dress
+            2: [3, 5]  Left-arm, Left-hand
+            3: [4, 6]  Right-arm, Right-hand
+            4: [7, 9]  Left-leg, Left-foot
+            5: [8, 10] Right-leg, Right-foot
+        """
+        coarse_mask_list = list()
+        coarse_parts = [[1,2,11], [3,5], [4,6], [7,9], [8,10]]
+        for coarse_part in coarse_parts:
+            part = mask_resize.long() == -1
+            for i in coarse_part:
+                part += (mask_resize.long() == i)
+            coarse_mask_list.append(part)
+
+        coarse_list = list()
+        for i in range(len(coarse_mask_list)):
+            coarse_list.append((coarse_mask_list[i].float()).unsqueeze(1)) 
+        coarse_feat = torch.cat(coarse_list, dim=1)  # [n*s, 5, h, w]
+
+        return coarse_feat
 
     def ParsPartforGCN(self, x, pars):
         """
             x: [n, c, s, h, w]
-            paes: [n, 1, s, H, W]
+            pars: [n, 1, s, H, W]
             return [n*s, 11, c, h, w] or [n*s, 5, c, h, w]
         """
         n, c, s, h, w = x.size()
@@ -178,17 +209,22 @@ class ParsingGait(BaseModel):
         mask_resize = mask_resize.view(n*s, h, w)
 
         z = x.transpose(1, 2).reshape(n*s, c, h, w)
-        
+
+        if self.coarse_part_base_triplet:
+            coarse_feat = self.ParsPartforCoarsePairs(mask_resize)
+        else:
+            coarse_feat = None
+            
         if self.only_fine_graph:
             fine_z_feat = self.ParsPartforFineGraph(mask_resize, z)
-            return fine_z_feat, None
+            return fine_z_feat, None, coarse_feat
         elif self.only_coarse_graph:
             coarse_z_feat = self.ParsPartforCoarseGraph(mask_resize, z)
-            return None, coarse_z_feat
+            return None, coarse_z_feat, coarse_feat
         elif self.combine_fine_coarse_graph:
             fine_z_feat = self.ParsPartforFineGraph(mask_resize, z)
             coarse_z_feat = self.ParsPartforCoarseGraph(mask_resize, z)
-            return fine_z_feat, coarse_z_feat
+            return fine_z_feat, coarse_z_feat, coarse_feat
         else:
             raise ValueError("You should choose fine/coarse graph, or combine both of them.")
 
@@ -209,6 +245,20 @@ class ParsingGait(BaseModel):
         output_ps = self.TP(output_ps, seqL, dim=1, options={"dim": 1})[0]  # [n, ps, c]
 
         return output_ps
+    
+    def get_part_base_feat(self, encoder, n, input, seqL):
+        """
+        input : [n*s, h, w] --> we use this function just for one part.
+
+        """
+        # n_s, p, c = input.size()
+
+        output_ps = encoder(input)  # [n*s, 64] we get an embedding for each frame.
+
+        # output_ps = output_ps.view(n, n_s//n, p, c)   # [n, s, ps, c]
+        # output_ps = self.TP(output_ps, seqL, dim=1, options={"dim": 1})[0]  # [n, ps, c]
+
+        return output_ps
 
 
     def forward(self, inputs):
@@ -226,7 +276,7 @@ class ParsingGait(BaseModel):
         # split features by parsing classes
         # outs_ps_fine: [n*s, 11, c, h, w]
         # outs_ps_coarse: [n*s, 5, c, h, w]
-        outs_ps_fine, outs_ps_coarse = self.ParsPartforGCN(outs, pars)
+        outs_ps_fine, outs_ps_coarse , outs_coarse_part_triplet = self.ParsPartforGCN(outs, pars)
 
         is_cuda = pars.is_cuda
         if self.only_fine_graph:
@@ -240,6 +290,11 @@ class ParsingGait(BaseModel):
         else:
             raise ValueError("You should choose fine/coarse graph, or combine both of them.")
         outs_ps = outs_ps.transpose(1, 2).contiguous()  # [n, c, ps]
+
+        parts_embedding_list = []
+        if self.coarse_part_base_triplet:
+            for idx , encoder in enumerate(self.partBaseEncoderList):
+                parts_embedding_list.append(self.get_part_base_feat(idx, encoder, outs_n, outs_coarse_part_triplet[:,idx,:,:], seqL))
 
         # Temporal Pooling, TP
         outs = self.TP(outs, seqL, options={"dim": 2})[0]  # [n, c, h, w]
@@ -256,6 +311,7 @@ class ParsingGait(BaseModel):
         retval = {
             'training_feat': {
                 'triplet': {'embeddings': embed_1, 'labels': labs},
+                'triplet2': {'embeddings': parts_embedding_list, 'labels': labs},
                 'softmax': {'logits': logits, 'labels': labs}
             },
             'visual_summary': {
