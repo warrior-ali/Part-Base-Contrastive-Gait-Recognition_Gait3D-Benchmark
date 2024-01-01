@@ -88,19 +88,38 @@ def compute_ACC_mAP(distmat, q_pids, g_pids, q_views=None, g_views=None, rank=1)
     return ACC, mAP
 
 
-def evaluate_rank(distmat, p_lbls, g_lbls, max_rank=50):
+def evaluate_rank(distmat_list, p_lbls, g_lbls, max_rank=50):
     '''
     Copy from https://github.com/Gait3D/Gait3D-Benchmark/blob/72beab994c137b902d826f4b9f9e95b107bebd78/lib/utils/rank.py#L12-L63
     '''
-    num_p, num_g = distmat.shape
+    num_p, num_g = distmat_list[0].shape
 
     if num_g < max_rank:
         max_rank = num_g
         print('Note: number of gallery samples is quite small, got {}'.format(num_g))
 
-    indices = np.argsort(distmat, axis=1)
 
-    matches = (g_lbls[indices] == p_lbls[:, np.newaxis]).astype(np.int32)
+    indices_dist = np.argsort(distmat_list[0], axis=1)
+    indices_dist_part0 = np.argsort(distmat_list[1], axis=1)
+    indices_dist_part1 = np.argsort(distmat_list[2], axis=1)
+    indices_dist_part2 = np.argsort(distmat_list[3], axis=1)
+    indices_dist_part3 = np.argsort(distmat_list[4], axis=1)
+    indices_dist_part4 = np.argsort(distmat_list[5], axis=1)
+
+    voted_indices = []
+    for idx,_ in enumerate(indices_dist):
+        temp_probe = [indices_dist[idx],
+                      indices_dist_part0[idx],
+                      indices_dist_part1[idx],
+                      indices_dist_part2[idx],
+                      indices_dist_part3[idx],
+                      indices_dist_part4[idx]]
+        
+        # https://www.geeksforgeeks.org/find-the-most-frequent-value-in-a-numpy-array/
+        voted_indices.append(np.bincount(temp_probe).argmax())
+        
+
+    matches = (g_lbls[voted_indices] == p_lbls[:, np.newaxis]).astype(np.int32)
 
     # compute cmc curve for each probe
     all_cmc = []

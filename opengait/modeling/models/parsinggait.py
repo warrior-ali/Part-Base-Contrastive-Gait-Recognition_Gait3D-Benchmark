@@ -307,14 +307,23 @@ class ParsingGait(BaseModel):
         retval = {
             'training_feat': {
                 'triplet': {'embeddings': embed_1, 'labels': labs},
-                'triplet2': {'embeddings': parts_embedding_list, 'labels': labs},
+                'triplet-part0': {'embeddings': parts_embedding_list[0], 'labels': labs},
+                'triplet-part1': {'embeddings': parts_embedding_list[1], 'labels': labs},
+                'triplet-part2': {'embeddings': parts_embedding_list[2], 'labels': labs},
+                'triplet-part3': {'embeddings': parts_embedding_list[3], 'labels': labs},
+                'triplet-part4': {'embeddings': parts_embedding_list[4], 'labels': labs},
                 'softmax': {'logits': logits, 'labels': labs}
             },
             'visual_summary': {
                 'image/pars': pars.view(n*s, 1, h, w)
             },
             'inference_feat': {
-                'embeddings': embed
+                'embeddings': embed,
+                'embeddings-part0': parts_embedding_list[0],
+                'embeddings-part1': parts_embedding_list[1],
+                'embeddings-part2': parts_embedding_list[2],
+                'embeddings-part3': parts_embedding_list[3],
+                'embeddings-part4': parts_embedding_list[4],
             }
         }
         return retval

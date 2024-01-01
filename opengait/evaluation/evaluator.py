@@ -281,3 +281,89 @@ def evaluate_Gait3D(data, dataset, metric='euc'):
 
     return results
 
+def evaluate_partBase_Gait3D(data, dataset, metric='euc'):
+    msg_mgr = get_msg_mgr()
+
+    features, labels, cams, time_seqs = data['embeddings'], data['labels'], data['types'], data['views']
+    (features_part0, 
+     features_part1, 
+     features_part2, 
+     features_part3, 
+     features_part4) = (
+        data['embeddings-part0'],
+        data['embeddings-part1'],
+        data['embeddings-part2'], 
+        data['embeddings-part3'], 
+        data['embeddings-part4'])
+    
+    import json
+    probe_sets = json.load(
+        open('./datasets/Gait3D/Gait3D.json', 'rb'))['PROBE_SET']
+    probe_mask = []
+    for id, ty, sq in zip(labels, cams, time_seqs):
+        if '-'.join([id, ty, sq]) in probe_sets:
+            probe_mask.append(True)
+        else:
+            probe_mask.append(False)
+    probe_mask = np.array(probe_mask)
+
+    # probe_features = features[:probe_num]
+    probe_features = features[probe_mask]
+    # gallery_features = features[probe_num:]
+    gallery_features = features[~probe_mask]
+
+    (probe_features_part0,
+     probe_features_part1, 
+     probe_features_part2, 
+     probe_features_part3, 
+     probe_features_part4) = (
+        features_part0[probe_mask],
+        features_part1[probe_mask],
+        features_part2[probe_mask],
+        features_part3[probe_mask],
+        features_part4[probe_mask])
+    
+    (gallery_features_part0,
+     gallery_features_part1, 
+     gallery_features_part2, 
+     gallery_features_part3, 
+     gallery_features_part4) = (
+        features_part0[~probe_mask],
+        features_part1[~probe_mask],
+        features_part2[~probe_mask],
+        features_part3[~probe_mask],
+        features_part4[~probe_mask])
+
+    # probe_lbls = np.asarray(labels[:probe_num])
+    # gallery_lbls = np.asarray(labels[probe_num:])
+    probe_lbls = np.asarray(labels)[probe_mask]
+    gallery_lbls = np.asarray(labels)[~probe_mask]
+
+    results = {}
+    msg_mgr.log_info(f"The test metric you choose is {metric}.")
+    dist = cuda_dist(probe_features, gallery_features, metric).cpu().numpy()
+
+    dist_part0 = cuda_dist(probe_features_part0, gallery_features_part0, metric).cpu().numpy()
+    dist_part1 = cuda_dist(probe_features_part1, gallery_features_part1, metric).cpu().numpy()
+    dist_part2 = cuda_dist(probe_features_part2, gallery_features_part2, metric).cpu().numpy()
+    dist_part3 = cuda_dist(probe_features_part3, gallery_features_part3, metric).cpu().numpy()
+    dist_part4 = cuda_dist(probe_features_part4, gallery_features_part4, metric).cpu().numpy()
+
+    cmc, all_AP, all_INP = evaluate_rank([dist, 
+                                          dist_part0,
+                                          dist_part1,
+                                          dist_part2, 
+                                          dist_part3, 
+                                          dist_part4], probe_lbls, gallery_lbls)
+
+    mAP = np.mean(all_AP)
+    mINP = np.mean(all_INP)
+    for r in [1, 5, 10]:
+        results['scalar/test_accuracy/Rank-{}'.format(r)] = cmc[r - 1] * 100
+    results['scalar/test_accuracy/mAP'] = mAP * 100
+    results['scalar/test_accuracy/mINP'] = mINP * 100
+
+    msg_mgr.log_info(results)
+
+    return results
+

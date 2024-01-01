@@ -12,7 +12,7 @@ evaluator_cfg:
   restore_ckpt_strict: true
   restore_hint: 120000
   save_name: ParsingGait
-  eval_func: evaluate_Gait3D
+  eval_func: evaluate_partBase_Gait3D
   sampler:
     batch_shuffle: false
     batch_size: 4
@@ -32,6 +32,27 @@ loss_cfg:
     type: CrossEntropyLoss
     log_prefix: softmax
     log_accuracy: true
+
+  - loss_term_weight: 0.2
+    margin: 0.2
+    type: TripletLoss
+    log_prefix: triplet-part0
+  - loss_term_weight: 0.2
+    margin: 0.2
+    type: TripletLoss
+    log_prefix: triplet-part1
+  - loss_term_weight: 0.2
+    margin: 0.2
+    type: TripletLoss
+    log_prefix: triplet-part2
+  - loss_term_weight: 0.2
+    margin: 0.2
+    type: TripletLoss
+    log_prefix: triplet-part3
+  - loss_term_weight: 0.2
+    margin: 0.2
+    type: TripletLoss
+    log_prefix: triplet-part4
 
 model_cfg:
   model: ParsingGait
@@ -101,7 +122,7 @@ trainer_cfg:
     batch_size:
       # - 32 # TripletSampler, batch_size[0] indicates Number of Identity
       - 8 # Because of CUDA out of memory
-      - 2 #                 batch_size[1] indicates Samples sequqnce for each Identity
+      - 2 #                 batch_size[1] indicates Samples sequence for each Identity
     frames_num_fixed: 30 # fixed frames number for training
     frames_num_max: 50 # max frames number for unfixed training
     frames_num_min: 10 # min frames number for unfixed traing
