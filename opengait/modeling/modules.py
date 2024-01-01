@@ -369,7 +369,7 @@ def RmBN2dAffine(model):
 
 class PartBaseEncoder(nn.Module):
     def __init__(self, **kwargs):
-        super(BasicConv2d, self).__init__()
+        super(PartBaseEncoder , self).__init__()
         # self.conv = nn.Conv2d(in_channels, out_channels, kernel_size,
         #                       stride=stride, padding=padding, bias=False, **kwargs)
         

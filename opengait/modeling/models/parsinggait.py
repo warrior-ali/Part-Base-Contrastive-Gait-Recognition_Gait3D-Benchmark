@@ -67,7 +67,7 @@ class ParsingGait(BaseModel):
 
         self.partBaseEncoderList = []
         for i in range(5):
-            self.partBaseEncoderList[i] = PartBaseEncoder()
+            self.partBaseEncoderList.append(PartBaseEncoder())
 
         nfeat = model_cfg['SeparateFCs']['in_channels']
         gcn_cfg = model_cfg['gcn_cfg']
@@ -246,17 +246,13 @@ class ParsingGait(BaseModel):
 
         return output_ps
     
-    def get_part_base_feat(self, encoder, n, input, seqL):
+    def get_part_base_feat(self, encoder, input):
         """
         input : [n*s, h, w] --> we use this function just for one part.
 
         """
-        # n_s, p, c = input.size()
-
-        output_ps = encoder(input)  # [n*s, 64] we get an embedding for each frame.
-
-        # output_ps = output_ps.view(n, n_s//n, p, c)   # [n, s, ps, c]
-        # output_ps = self.TP(output_ps, seqL, dim=1, options={"dim": 1})[0]  # [n, ps, c]
+        encoder.cuda()
+        output_ps = encoder(input.unsqueeze(1).cuda())  # [n*s, 64] we get an embedding for each frame. unsqueeze(1) lead to obtain normal form of CNN input like a (batch, channel, height, width). we didn't have channel number before add unsqueeze(1).
 
         return output_ps
 
@@ -294,7 +290,7 @@ class ParsingGait(BaseModel):
         parts_embedding_list = []
         if self.coarse_part_base_triplet:
             for idx , encoder in enumerate(self.partBaseEncoderList):
-                parts_embedding_list.append(self.get_part_base_feat(idx, encoder, outs_n, outs_coarse_part_triplet[:,idx,:,:], seqL))
+                parts_embedding_list.append(self.get_part_base_feat(encoder, outs_coarse_part_triplet[:,idx,:,:]))
 
         # Temporal Pooling, TP
         outs = self.TP(outs, seqL, options={"dim": 2})[0]  # [n, c, h, w]
