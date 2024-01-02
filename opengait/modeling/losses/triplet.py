@@ -12,11 +12,17 @@ class TripletLoss(BaseLoss):
     @gather_and_scale_wrapper
     def forward(self, embeddings, labels):
         # embeddings: [n, c, p], label: [n]
-        embeddings = embeddings.permute(
-            2, 0, 1).contiguous().float()  # [n, c, p] -> [p, n, c]
+        len_embds = len(embeddings.shape)
+        if len_embds == 3:
+            embeddings = embeddings.permute(
+                2, 0, 1).contiguous().float()  # [n, c, p] -> [p, n, c]
+        else:
+            embeddings = embeddings.permute(
+                1 , 0).contiguous().float()  # [n*s, 64] -> [64, n*s]
+
 
         ref_embed, ref_label = embeddings, labels
-        dist = self.ComputeDistance(embeddings, ref_embed)  # [p, n1, n2]
+        dist = self.ComputeDistance(embeddings, ref_embed ,len_embds)  # [p, n1, n2]
         mean_dist = dist.mean((1, 2))  # [p]
         ap_dist, an_dist = self.Convert2Triplets(labels, ref_label, dist)
         dist_diff = (ap_dist - an_dist).view(dist.size(0), -1)
@@ -42,16 +48,23 @@ class TripletLoss(BaseLoss):
         loss_avg[loss_num == 0] = 0
         return loss_avg, loss_num
 
-    def ComputeDistance(self, x, y):
+    def ComputeDistance(self, x, y, len_embds):
         """
-            x: [p, n_x, c]
-            y: [p, n_y, c]
+            x: [p, n_x, c] or [p , n_x]
+            y: [p, n_y, c] or [p , n_y]
         """
-        x2 = torch.sum(x ** 2, -1).unsqueeze(2)  # [p, n_x, 1]
-        y2 = torch.sum(y ** 2, -1).unsqueeze(1)  # [p, 1, n_y]
-        inner = x.matmul(y.transpose(1, 2))  # [p, n_x, n_y]
-        dist = x2 + y2 - 2 * inner
-        dist = torch.sqrt(F.relu(dist))  # [p, n_x, n_y]
+        if len_embds == 3:
+            x2 = torch.sum(x ** 2, -1).unsqueeze(2)  # [p, n_x, 1]
+            y2 = torch.sum(y ** 2, -1).unsqueeze(1)  # [p, 1, n_y]
+            inner = x.matmul(y.transpose(1, 2))  # [p, n_x, n_y]
+            dist = x2 + y2 - 2 * inner
+            dist = torch.sqrt(F.relu(dist))  # [p, n_x, n_y]
+        else: 
+            x2 = x.unsqueeze(-1)
+            y2 = y.unsqueeze(1)
+            inner = x2.matmul(y.unsqueeze(-1).transpose(1, 2))
+            dist = x2 + y2 - 2 * inner
+            dist = torch.sqrt(F.relu(dist))  # [p, n_x, n_y]
         return dist
 
     def Convert2Triplets(self, row_labels, clo_label, dist):
