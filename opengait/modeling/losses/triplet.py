@@ -44,6 +44,15 @@ class TripletLoss(BaseLoss):
         loss_sum = loss.sum(-1)
         loss_num = (loss != 0).sum(-1).float()
 
+        # this code is for escaping from 'cuda out of memory' caused by do operation on 12 milion parameters in out first idea. 
+
+        # loss_num = torch.zeros((loss.size()[0])).cuda()
+        # for i in range(loss.size()[0]):
+        #   for j in range(loss.size()[1]):
+        #     if loss[i,j] != 0:    
+        #       loss_num[i] += 1
+        # loss_num = loss_num.float()
+
         loss_avg = loss_sum / (loss_num + eps)
         loss_avg[loss_num == 0] = 0
         return loss_avg, loss_num
@@ -74,8 +83,24 @@ class TripletLoss(BaseLoss):
         """
         matches = (row_labels.unsqueeze(1) ==
                    clo_label.unsqueeze(0)).bool()  # [n_r, n_c]
-        diffenc = torch.logical_not(matches)  # [n_r, n_c]
+        
         p, n, _ = dist.size()
+        n_r = torch.tensor(row_labels.size(), dtype=torch.int64)
+        n_c = torch.tensor(clo_label.size(), dtype=torch.int64)
+
+        # this code is for the case that we have to make +&- pairs for all frames.
+        if n != n_r:
+            temp_matches = torch.ones((n, n), dtype=torch.bool)
+            for i in range(n_r):
+                for j in range(n_c):
+                  sub_matrix_range = int(n/n_r)
+                  start_point_i = i * sub_matrix_range
+                  start_point_j = j * sub_matrix_range
+                  temp_matches[start_point_i :start_point_i + sub_matrix_range 
+                  , start_point_j :start_point_j + sub_matrix_range] = matches[i,j]
+            matches = temp_matches
+        diffenc = torch.logical_not(matches)  # [n_r, n_c]
+
         ap_dist = dist[:, matches].view(p, n, -1, 1)
         an_dist = dist[:, diffenc].view(p, n, 1, -1)
         return ap_dist, an_dist
