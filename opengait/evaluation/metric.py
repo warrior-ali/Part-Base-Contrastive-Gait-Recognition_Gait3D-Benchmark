@@ -11,28 +11,32 @@ def cuda_dist(x, y, metric='euc'):
     if metric == 'cos':
         x = F.normalize(x, p=2, dim=1)  # n c p
         y = F.normalize(y, p=2, dim=1)  # n c p
-    num_bin = x.size(2) if len(x.size()) == 3 else x.size(1)
     n_x = x.size(0)
     n_y = y.size(0)
     dist = torch.zeros(n_x, n_y).cuda()
-    for i in range(num_bin):
-        _x = x[:, :, i] if len(x.size()) == 3 else x[:, i]
-        _y = y[:, :, i] if len(y.size()) == 3 else y[:, i]
-        if metric == 'cos':
-            dist += torch.matmul(_x, _y.transpose(0, 1))
-        else:
-            if len(x.size()) == 3 :
-              print('\n' , torch.sum(_x ** 2, 1).unsqueeze(1).size() , '\n' , torch.sum(_y ** 2, 1).unsqueeze(0).size() , '\n' , _x.size() ,'\n ', _y.transpose(0, 1).size())
-              _dist = torch.sum(_x ** 2, 1).unsqueeze(1) + torch.sum(_y ** 2, 1).unsqueeze(
-                  0) - 2 * torch.matmul(_x, _y.transpose(0, 1))
+    if len(x.size()) == 2:
+        # _dist = torch.sum(x ** 2, -1).unsqueeze(-1) + torch.sum(y ** 2, -1).unsqueeze(
+        #     0) - 2 * torch.matmul(x, y.transpose(0, -1))
+        # dist = torch.sqrt(F.relu(_dist))
+        _dist = torch.sum(x, -1).unsqueeze(-1) - torch.sum(y, -1).unsqueeze(0)
+        dist = F.relu(_dist)  
+        return dist
+    else:
+        num_bin = x.size(2)
+        for i in range(num_bin):
+            _x = x[:, :, i]
+            _y = y[:, :, i]
+            if metric == 'cos':
+                dist += torch.matmul(_x, _y.transpose(0, 1))
             else:
-              print('\n' , torch.sum(_x ** 2, 0).unsqueeze(-1).size() , '\n' , torch.sum(_y ** 2, 0).unsqueeze(0).size() , '\n' , _x.size() ,'\n ', _y.transpose(0, -1).size())
+                # _dist = torch.sum(_x ** 2, 1).unsqueeze(1) + torch.sum(_y ** 2, 1).unsqueeze(
+                #     0) - 2 * torch.matmul(_x, _y.transpose(0, 1))
+                # dist += torch.sqrt(F.relu(_dist))
 
-              _dist = torch.sum(_x ** 2, -1).unsqueeze(-1) + torch.sum(_y ** 2, -1).unsqueeze(
-                  0) - 2 * torch.matmul(_x, _y.transpose(-1, 0))
-              
-            dist += torch.sqrt(F.relu(_dist))
-    return 1 - dist/num_bin if metric == 'cos' else dist / num_bin
+                _dist = torch.sum(_x, 1).unsqueeze(1) - torch.sum(_y, 1).unsqueeze(0) ## Using manhattan distance instead of euclidean distance because of large numbers in 'euc'
+                dist += F.relu(_dist)
+
+        return 1 - dist/num_bin if metric == 'cos' else dist / num_bin
 
 
 def mean_iou(msk1, msk2, eps=1.0e-9):
@@ -114,17 +118,29 @@ def evaluate_rank(distmat_list, p_lbls, g_lbls, max_rank=50):
     indices_dist_part3 = np.argsort(distmat_list[4], axis=1)
     indices_dist_part4 = np.argsort(distmat_list[5], axis=1)
 
-    voted_indices = []
-    for idx,_ in enumerate(indices_dist):
-        temp_probe = [indices_dist[idx],
-                      indices_dist_part0[idx],
-                      indices_dist_part1[idx],
-                      indices_dist_part2[idx],
-                      indices_dist_part3[idx],
-                      indices_dist_part4[idx]]
+    voted_indices = np.zeros((num_p , num_g))
+    for i in range(indices_dist.shape[0]):
+        for j in range(indices_dist.shape[1]):
+            temp_probe = [indices_dist[i , j],
+                        indices_dist_part0[i , j],
+                        indices_dist_part1[i , j],
+                        indices_dist_part2[i , j],
+                        indices_dist_part3[i , j],
+                        indices_dist_part4[i , j]]
+            voted_indices[i,j] = np.bincount(temp_probe).argmax()
+    
+    voted_indices = voted_indices.astype(np.int32)
+            
+    # for idx,_ in enumerate(indices_dist):
+    #     temp_probe = [indices_dist[idx],
+    #                   indices_dist_part0[idx],
+    #                   indices_dist_part1[idx],
+    #                   indices_dist_part2[idx],
+    #                   indices_dist_part3[idx],
+    #                   indices_dist_part4[idx]]
         
-        # https://www.geeksforgeeks.org/find-the-most-frequent-value-in-a-numpy-array/
-        voted_indices.append(np.bincount(temp_probe).argmax())
+    #     # https://www.geeksforgeeks.org/find-the-most-frequent-value-in-a-numpy-array/
+    #     voted_indices.append(np.bincount(temp_probe).argmax())
         
 
     matches = (g_lbls[voted_indices] == p_lbls[:, np.newaxis]).astype(np.int32)
