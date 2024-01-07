@@ -246,7 +246,7 @@ class ParsingGait(BaseModel):
 
         return output_ps
     
-    def get_part_base_feat(self, encoder, input, n):
+    def get_part_base_feat(self, encoder, input, n , seqL):
         """
         input : [n*s, h, w] --> we use this function just for one part.
 
@@ -256,7 +256,7 @@ class ParsingGait(BaseModel):
         encoder.cuda()
         output_ps = encoder(input.unsqueeze(1).cuda())  # [n*s, 64] we get an embedding for each frame. unsqueeze(1) lead to obtain normal form of CNN input like a (batch, channel, height, width). we didn't have channel number before add unsqueeze(1).
         output_ps = output_ps.view(n, n_s//n , output_ps.size()[1])   # [n, s, 64]
-        output_ps = output_ps.mean(1).squeeze(1) # [n, 64]
+        output_ps = self.TP(output_ps, seqL, dim=1, options={"dim": 1})[0]  # [n, 64]
 
         return output_ps
 
@@ -272,6 +272,7 @@ class ParsingGait(BaseModel):
         outs = self.Backbone(pars)  # [n, c, s, h, w]
 
         outs_n, outs_c, outs_s, outs_h, outs_w = outs.size()
+
 
         # split features by parsing classes
         # outs_ps_fine: [n*s, 11, c, h, w]
@@ -294,7 +295,7 @@ class ParsingGait(BaseModel):
         parts_embedding_list = []
         if self.coarse_part_base_triplet:
             for idx , encoder in enumerate(self.partBaseEncoderList):
-                parts_embedding_list.append(self.get_part_base_feat(encoder, outs_coarse_part_triplet[:,idx,:,:], outs_n))
+                parts_embedding_list.append(self.get_part_base_feat(encoder, outs_coarse_part_triplet[:,idx,:,:], outs_n, seqL))
 
         # Temporal Pooling, TP
         outs = self.TP(outs, seqL, options={"dim": 2})[0]  # [n, c, h, w]
