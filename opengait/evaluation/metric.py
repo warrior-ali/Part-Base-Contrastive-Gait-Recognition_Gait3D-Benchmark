@@ -121,14 +121,28 @@ def evaluate_rank(distmat_list, p_lbls, g_lbls, max_rank=50):
     voted_indices = np.zeros((num_p , num_g))
     for i in range(indices_dist.shape[0]):
         for j in range(indices_dist.shape[1]):
-            temp_probe = [indices_dist[i , j],
-                        indices_dist_part0[i , j],
+            # # Majority Vote
+            # temp_probe = [indices_dist[i , j],
+            #             indices_dist_part0[i , j],
+            #             indices_dist_part1[i , j],
+            #             indices_dist_part2[i , j],
+            #             indices_dist_part3[i , j],
+            #             indices_dist_part4[i , j]]
+            # voted_indices[i,j] = np.bincount(temp_probe).argmax()
+           
+            # Vote By Probability 
+            temp_probe_parts = [indices_dist_part0[i , j],
                         indices_dist_part1[i , j],
                         indices_dist_part2[i , j],
                         indices_dist_part3[i , j],
                         indices_dist_part4[i , j]]
-            voted_indices[i,j] = np.bincount(temp_probe).argmax()
-    
+
+            # check if all parts id are identical
+            if len(set(temp_probe_parts)) == 1:
+                voted_indices[i,j] = np.random.choice([indices_dist[i , j],indices_dist_part0[i , j]], 1, p=[0.7,0.3])[0]
+            else:
+                voted_indices[i,j] = indices_dist[i , j]
+
     voted_indices = voted_indices.astype(np.int32)
             
     # for idx,_ in enumerate(indices_dist):
